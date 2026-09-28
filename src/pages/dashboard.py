@@ -1,5 +1,5 @@
 import dash
-from dash import Input, Output, State, callback, dcc, html
+from dash import Input, Output, State, callback, clientside_callback, dcc, html
 from dash.exceptions import PreventUpdate
 
 from components import correlation, data_quality, distribution, overview, timeseries
@@ -35,8 +35,11 @@ TAB_SELECTED_STYLE = {
 layout = html.Div(
     [
         dcc.Store(id="applied-filters", data={"years": years, "columns": sensor_columns}),
-        html.Div(
+        # Collapsible on narrow screens (see the clientside callback below); on desktop the
+        # <summary> is hidden by CSS and the panel stays open as a regular sidebar.
+        html.Details(
             [
+                html.Summary("필터", className="sidebar-summary"),
                 html.H3("필터"),
                 html.Label("연도 선택"),
                 dcc.Dropdown(
@@ -57,7 +60,9 @@ layout = html.Div(
                 html.Button("적용", id="apply-filters", n_clicks=0, className="filter-apply-btn"),
                 html.Span(id="pending-indicator", className="pending-indicator"),
             ],
+            id="filter-panel",
             className="sidebar",
+            open=True,
         ),
         html.Div(
             [
@@ -66,6 +71,9 @@ layout = html.Div(
                     id="tabs",
                     value="tab-overview",
                     className="app-tabs",
+                    # dcc.Tabs stacks vertically below 800px by default; keep one row and
+                    # let style.css scroll it sideways instead.
+                    mobile_breakpoint=0,
                     children=[
                         dcc.Tab(
                             label="개요",
@@ -105,6 +113,19 @@ layout = html.Div(
         ),
     ],
     className="app-shell",
+)
+
+
+# Must match the max-width breakpoint in assets/style.css. Decided once per page load, so
+# the filters start collapsed on phones without collapsing them on desktop.
+clientside_callback(
+    """
+    function(_) {
+        return !window.matchMedia('(max-width: 768px)').matches;
+    }
+    """,
+    Output("filter-panel", "open"),
+    Input("filter-panel", "id"),
 )
 
 

@@ -142,9 +142,31 @@
     legend.setAttribute('transform', 'translate(' + (left + dx) + ',' + (top + dy) + ')');
   }
 
+  // On touch screens Plotly's drag handler preventDefault()s touchstart (whenever dragmode is
+  // not false), so a finger on a tall chart (distribution/timeseries) can't scroll the page.
+  // Turn dragging off there. Figures are rebuilt server-side (Plotly.react resets the layout),
+  // so re-check after every plot.
+  // With touchstart no longer cancelled, the browser also fires compatibility mouse events,
+  // including a mouseout right after the tap that would wipe the hover label the tap just
+  // showed. Touch has no "pointer left" to react to, so swallow mouseout: the label stays
+  // until the next tap moves it.
+  var COARSE_POINTER = window.matchMedia('(pointer: coarse)');
+
+  function disableTouchDrag(gd) {
+    if (COARSE_POINTER.matches && gd._fullLayout && gd._fullLayout.dragmode !== false) {
+      Plotly.relayout(gd, { dragmode: false });
+    }
+  }
+
   function bind(gd) {
     if (gd.__hoverHighlightBound || typeof gd.on !== 'function') return;
     gd.__hoverHighlightBound = true;
+
+    disableTouchDrag(gd);
+    gd.on('plotly_afterplot', function () { disableTouchDrag(gd); });
+    if (COARSE_POINTER.matches) {
+      gd.addEventListener('mouseout', function (e) { e.stopPropagation(); }, true);
+    }
 
     // Plotly redraws the label on every hover, including rehovers that emit no event, so
     // watch the DOM instead. Observer callbacks run before paint: no flash of the swatches.
@@ -155,7 +177,7 @@
     var frame = null;
 
     // Coalesce rapid hover events into one redraw per animation frame.
-    gd.on('plotly_hover', function (e) {
+    function onHover(e) {
       var color = highlightColor(gd);
       var pt = e.points && e.points[0];
       if (!color || !pt) return;
@@ -168,7 +190,11 @@
         if (p.data.type === 'bar') highlightBar(gd, p, color);
         else if (p.data.type === 'scatter' || p.data.type === 'scattergl') highlightX(gd, p, color);
       });
-    });
+    }
+    gd.on('plotly_hover', onHover);
+    // A tap shows the hover label through Plotly's click path, which emits plotly_click but
+    // not plotly_hover; highlight on it too. (On desktop it re-marks the already-hovered point.)
+    gd.on('plotly_click', onHover);
     gd.on('plotly_unhover', function () {
       if (!highlightColor(gd)) return;
       // Drop a queued highlight so it can't land after the pointer has left.
